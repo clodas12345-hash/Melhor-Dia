@@ -1,0 +1,6 @@
+{
+  "name": "GKD Melhor Dia",
+  "description": "Aplicativo para gerenciar cartões de crédito e identificar qual o melhor cartão para realizar compras em uma determinada data para obter o maior prazo de pagamento.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
