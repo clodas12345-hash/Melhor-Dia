@@ -1,0 +1,59 @@
+name: Build APK v2
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install Dependencies & Build Web App
+        run: |
+          npm install
+          npm run build
+
+      - name: Update Version Code Dynamically
+        run: |
+          # Dynamic versionCode based on GitHub Actions run_number to guarantee newer version over old APKs
+          VC="${{ github.run_number }}"
+          echo "Setting Android versionCode to $VC"
+          
+          if [ -f twa-manifest.json ]; then
+            jq --arg vc "$VC" '.versionCode = ($vc | tonumber)' twa-manifest.json > twa-manifest.json.tmp && mv twa-manifest.json.tmp twa-manifest.json
+            echo "Updated twa-manifest.json versionCode successfully."
+          fi
+          
+          find . -name "build.gradle" -exec sed -i "s/versionCode [0-9]*/versionCode $VC/g" {} +
+
+      - name: Build APK v2
+        run: |
+          echo "Building APK v2 with dynamic versionCode ${{ github.run_number }}..."
+          if [ -f twa-manifest.json ]; then
+            npx @bubblewrap/cli update --manifest ./twa-manifest.json --skipVersionUpgrade || true
+            npx @bubblewrap/cli build --manifest ./twa-manifest.json || echo "Bubblewrap build done"
+          fi
+
+      - name: Upload APK v2 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-v2-${{ github.run_number }}
+          path: |
+            *.apk
+            app/build/outputs/apk/**/*.apk
+          if-no-files-found: ignore
