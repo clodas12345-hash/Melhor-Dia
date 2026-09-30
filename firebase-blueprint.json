@@ -1,0 +1,31 @@
+{
+  "collections": {
+    "bank_logos": {
+      "description": "Storage for official bank logo URLs found on the internet.",
+      "fields": {
+        "name": {
+          "type": "string",
+          "description": "Normalized name of the bank"
+        },
+        "logoUrl": {
+          "type": "string",
+          "description": "The verified logo URL"
+        },
+        "updatedAt": {
+          "type": "timestamp",
+          "description": "When this logo was last verified"
+        }
+      },
+      "indexes": [
+        {
+          "fields": [
+            {
+              "fieldPath": "name",
+              "order": "ASCENDING"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
