@@ -22,6 +22,7 @@ import { PermissionsWidget } from './components/PermissionsWidget';
 import { ensureAuth, db, auth } from './lib/firebase';
 import { doc, setDoc, onSnapshot } from 'firebase/firestore';
 import { seedInitialLogos } from './lib/logoMemory';
+import { setupPushNotifications } from './lib/push';
 
 enum OperationType {
   CREATE = 'create',
@@ -130,6 +131,9 @@ export default function App() {
 
     async function initCloudSync() {
       try {
+        // Inicializa Push Notifications
+        setupPushNotifications().catch(err => console.error('Push setup error:', err));
+
         // Inicializa logos conhecidos
         seedInitialLogos();
         
