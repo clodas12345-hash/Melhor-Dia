@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   CreditCard as CardIcon, 
   HelpCircle, 
@@ -23,6 +23,7 @@ import { ensureAuth, db, auth } from './lib/firebase';
 import { doc, setDoc, onSnapshot } from 'firebase/firestore';
 import { seedInitialLogos } from './lib/logoMemory';
 import { setupPushNotifications } from './lib/push';
+import { App as CapApp } from '@capacitor/app';
 
 enum OperationType {
   CREATE = 'create',
@@ -122,6 +123,90 @@ export default function App() {
     if (window.location.search.includes('privacy') || window.location.hash.includes('privacy')) {
       setShowPrivacy(true);
     }
+  }, []);
+
+  // Referência para os estados de telas e modais secundários
+  const screensStateRef = useRef({
+    showManager,
+    showGuide,
+    showLogoModal,
+    showPrivacy,
+    showGreeting,
+    showSettingsMenu,
+    showPermissionsModal,
+  });
+
+  useEffect(() => {
+    screensStateRef.current = {
+      showManager,
+      showGuide,
+      showLogoModal,
+      showPrivacy,
+      showGreeting,
+      showSettingsMenu,
+      showPermissionsModal,
+    };
+  }, [
+    showManager,
+    showGuide,
+    showLogoModal,
+    showPrivacy,
+    showGreeting,
+    showSettingsMenu,
+    showPermissionsModal,
+  ]);
+
+  // Intercepta o botão voltar nativo do celular para nunca fechar o app
+  useEffect(() => {
+    let removeListener: (() => void) | undefined;
+
+    CapApp.addListener('backButton', () => {
+      const {
+        showManager: isManager,
+        showGuide: isGuide,
+        showLogoModal: isLogo,
+        showPrivacy: isPrivacy,
+        showGreeting: isGreeting,
+        showSettingsMenu: isMenu,
+        showPermissionsModal: isPerms,
+      } = screensStateRef.current;
+
+      const isInitialScreen =
+        !isManager &&
+        !isGuide &&
+        !isLogo &&
+        !isPrivacy &&
+        !isGreeting &&
+        !isMenu &&
+        !isPerms;
+
+      if (!isInitialScreen) {
+        // Se estiver em qualquer tela que não seja a inicial, volta para a tela inicial
+        setShowManager(false);
+        setShowGuide(false);
+        setShowLogoModal(false);
+        setShowPrivacy(false);
+        setShowGreeting(false);
+        setShowSettingsMenu(false);
+        setShowPermissionsModal(false);
+      } else {
+        // Se já estiver na tela inicial, não faça nada (nunca fecha o app)
+      }
+    })
+      .then((handle) => {
+        removeListener = () => {
+          handle.remove();
+        };
+      })
+      .catch((err) => {
+        console.warn('Capacitor App backButton indisponível no ambiente atual:', err);
+      });
+
+    return () => {
+      if (removeListener) {
+        removeListener();
+      }
+    };
   }, []);
 
   // Sincronização em segundo plano com prioridade absoluta ao LocalStorage
