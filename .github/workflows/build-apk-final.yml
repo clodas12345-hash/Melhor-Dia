@@ -52,7 +52,7 @@ jobs:
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           # Injeta permissões antes da tag <application>
-          sed -i '/<application/i\    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-permission android:name="android.permission.USE_BIOMETRIC" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-feature android:name="android.hardware.camera" android:required="false" />' "$MANIFEST"
+          sed -i '/<application/i\    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-permission android:name="android.permission.USE_BIOMETRIC" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />\n    <uses-feature android:name="android.hardware.camera" android:required="false" />' "$MANIFEST"
 
       - name: Organizar ícone e gerar assets
         run: |

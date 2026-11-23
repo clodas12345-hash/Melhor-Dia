@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Shield, Bell, MapPin, Camera, Mic, CheckCircle, AlertCircle, Sparkles } from 'lucide-react';
+import { LocalNotifications } from '@capacitor/local-notifications';
 
 export const PermissionsWidget: React.FC = () => {
   const [notificationStatus, setNotificationStatus] = useState<string>('default');
@@ -11,8 +12,13 @@ export const PermissionsWidget: React.FC = () => {
 
   // Check initial permissions
   const updatePermissions = async () => {
-    if ('Notification' in window) {
-      setNotificationStatus(Notification.permission);
+    try {
+      const perm = await LocalNotifications.checkPermissions();
+      setNotificationStatus(perm.display);
+    } catch {
+      if ('Notification' in window) {
+        setNotificationStatus(Notification.permission);
+      }
     }
     
     if (navigator.permissions) {
@@ -50,13 +56,26 @@ export const PermissionsWidget: React.FC = () => {
     setIsRequesting(true);
     setSuccessMessage(null);
 
-    // 1. Request Notification Permission
-    if ('Notification' in window) {
-      try {
-        const res = await Notification.requestPermission();
-        setNotificationStatus(res);
-      } catch (e) {
-        console.error("Failed to request notification permission", e);
+    // 1. Request Notification Permission via Capacitor LocalNotifications (Android 13+)
+    try {
+      const perm = await LocalNotifications.requestPermissions();
+      setNotificationStatus(perm.display);
+      await LocalNotifications.createChannel({
+        id: 'padrao',
+        name: 'Notificações Padrão',
+        description: 'Alertas e lembretes do GKD Melhor Dia',
+        importance: 5,
+        visibility: 1,
+        vibration: true,
+      });
+    } catch (e) {
+      if ('Notification' in window) {
+        try {
+          const res = await Notification.requestPermission();
+          setNotificationStatus(res);
+        } catch (err) {
+          console.error("Failed to request notification permission", err);
+        }
       }
     }
 

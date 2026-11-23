@@ -10,7 +10,8 @@ import {
   Cloud,
   Check,
   ChevronDown,
-  Share2
+  Share2,
+  Bell
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CreditCard } from './types';
@@ -24,6 +25,7 @@ import { doc, setDoc, onSnapshot } from 'firebase/firestore';
 import { seedInitialLogos } from './lib/logoMemory';
 import { setupPushNotifications } from './lib/push';
 import { App as CapApp } from '@capacitor/app';
+import { LocalNotifications } from '@capacitor/local-notifications';
 
 enum OperationType {
   CREATE = 'create',
@@ -117,6 +119,141 @@ export default function App() {
   const [showPermissionsModal, setShowPermissionsModal] = useState(false);
   // Inicia como 'synced' porque os dados do LocalStorage já estão carregados e disponíveis imediatamente
   const [cloudStatus, setCloudStatus] = useState<'syncing' | 'synced' | 'offline'>('synced');
+  const [notifPermStatus, setNotifPermStatus] = useState<string>('checking...');
+  const [notifFeedback, setNotifFeedback] = useState<string | null>(null);
+
+  const getBestCardToday = (cards: CreditCard[]) => {
+    if (!cards || cards.length === 0) return null;
+    const today = new Date();
+    const queryDay = today.getDate();
+    const getDaysSince = (day: number) => {
+      let diff = queryDay - day;
+      if (diff < 0) diff += 31;
+      return diff;
+    };
+    const sorted = [...cards].sort((a, b) => getDaysSince(a.bestDay) - getDaysSince(b.bestDay));
+    return sorted[0];
+  };
+
+  const scheduleDailyMorningNotification = async (cards: CreditCard[]) => {
+    try {
+      const best = getBestCardToday(cards);
+      const cardName = best ? best.name : 'GKD Platinum';
+      
+      const now = new Date();
+      const scheduledTime = new Date();
+      scheduledTime.setHours(6, 0, 0, 0);
+      if (scheduledTime.getTime() <= now.getTime()) {
+        scheduledTime.setDate(scheduledTime.getDate() + 1);
+      }
+
+      try {
+        const pending = await LocalNotifications.getPending();
+        const existingDaily = pending.notifications.filter(n => n.id === 888888);
+        if (existingDaily.length > 0) {
+          await LocalNotifications.cancel({ notifications: existingDaily });
+        }
+      } catch (e) {
+        // ignore
+      }
+
+      await LocalNotifications.schedule({
+        notifications: [
+          {
+            id: 888888,
+            channelId: 'gkd_alerta',
+            title: '☀️ Bom dia! Qual cartão usar hoje?',
+            body: `Hoje o melhor cartão para economizar é o ${cardName}. Garanta até 40 dias de prazo!`,
+            smallIcon: 'ic_stat_icon_config_sample',
+            schedule: {
+              at: scheduledTime,
+              every: 'day'
+            },
+            sound: 'default'
+          }
+        ]
+      });
+    } catch (err) {
+      console.warn('Erro ao agendar notificação diária das 6h:', err);
+    }
+  };
+
+  // 1 & 2. Ao abrir o app, solicita permissão POST_NOTIFICATIONS (Android 13+), cria o canal e agenda a notificação diária às 6h
+  useEffect(() => {
+    async function initLocalNotifications() {
+      try {
+        const perm = await LocalNotifications.requestPermissions();
+        setNotifPermStatus(perm.display);
+      } catch (err) {
+        console.warn('Erro ao solicitar permissão de LocalNotifications:', err);
+        if ('Notification' in window) {
+          setNotifPermStatus(Notification.permission);
+        } else {
+          setNotifPermStatus('denied');
+        }
+      }
+
+      try {
+        await LocalNotifications.createChannel({
+          id: 'gkd_alerta',
+          name: 'Alertas de Melhor Dia',
+          description: 'Notificações críticas para o melhor dia de compra',
+          importance: 5,
+          visibility: 1,
+          vibration: true,
+          sound: 'default'
+        });
+      } catch (err) {
+        console.warn('Erro ao criar canal gkd_alerta:', err);
+      }
+
+      await scheduleDailyMorningNotification(creditCards);
+    }
+
+    initLocalNotifications();
+  }, []);
+
+  // 3 & 4. Função para criar canal e agendar notificação em 5 segundos
+  const handleTestNotification = async () => {
+    try {
+      const perm = await LocalNotifications.requestPermissions();
+      setNotifPermStatus(perm.display);
+
+      await LocalNotifications.createChannel({
+        id: 'gkd_alerta',
+        name: 'Alertas de Melhor Dia',
+        description: 'Notificações críticas para o melhor dia de compra',
+        importance: 5,
+        visibility: 1,
+        vibration: true,
+        sound: 'default'
+      }).catch(() => {});
+
+      const uniqueId = Math.floor((Date.now() % 2000000000) + Math.random() * 1000);
+
+      await LocalNotifications.schedule({
+        notifications: [
+          {
+            id: uniqueId,
+            channelId: 'gkd_alerta',
+            title: 'GKD Melhor Dia',
+            body: 'Notificação de teste disparada com sucesso! Confira o melhor cartão de hoje.',
+            smallIcon: 'ic_stat_icon_config_sample',
+            schedule: {
+              at: new Date(Date.now() + 5000),
+            },
+          },
+        ],
+      });
+
+      setNotifFeedback('Notificação agendada para daqui a 5 segundos!');
+      setTimeout(() => setNotifFeedback(null), 6000);
+    } catch (err) {
+      console.error('Erro ao agendar notificação local:', err);
+      setNotifFeedback('Erro ao agendar notificação.');
+      setTimeout(() => setNotifFeedback(null), 5000);
+    }
+  };
 
   // Check URL query on load
   useEffect(() => {
@@ -289,6 +426,7 @@ export default function App() {
     try {
       localStorage.setItem('melhor_cartao_cards', JSON.stringify(cleanCards));
       localStorage.setItem('melhor_cartao_updatedAt', nowIso);
+      scheduleDailyMorningNotification(cleanCards);
     } catch (e) {
       console.warn("Erro ao salvar no LocalStorage:", e);
     }
@@ -503,6 +641,39 @@ export default function App() {
               onOpenManage={() => setShowManager(true)} 
             />
           </div>
+
+          {/* Painel de Depuração e Teste de Notificações Locais (Android 13+) */}
+          <div className="w-full bg-[#111114]/90 border border-white/10 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
+            <div className="flex items-center gap-2.5 text-xs">
+              <Bell className={`w-4 h-4 shrink-0 ${notifPermStatus === 'granted' ? 'text-emerald-400' : 'text-amber-400'}`} />
+              <span className="text-slate-300 font-medium">
+                Permissão de Notificação:{' '}
+                <strong className={`px-2 py-0.5 rounded-md font-mono text-[11px] uppercase ${
+                  notifPermStatus === 'granted'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                    : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                }`}>
+                  {notifPermStatus}
+                </strong>
+              </span>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
+              <button
+                onClick={handleTestNotification}
+                className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-md shadow-purple-500/20 transition cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Bell className="w-3.5 h-3.5" />
+                <span>Testar notificação</span>
+              </button>
+            </div>
+          </div>
+
+          {notifFeedback && (
+            <div className="w-full text-center text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-xl py-2 px-3">
+              {notifFeedback}
+            </div>
+          )}
 
           {/* Sparkles / Info Pill */}
           <div className="text-center">
