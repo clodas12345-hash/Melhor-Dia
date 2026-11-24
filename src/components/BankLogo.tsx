@@ -1,4 +1,5 @@
 import React from 'react';
+import logoGkdClean from '../assets/images/logo_gkd_mobility_clean.png';
 
 interface BankLogoProps {
   name: string;
@@ -235,11 +236,13 @@ export const BankLogo: React.FC<BankLogoProps> = ({ name, segment, customLogo, c
   // --- GKD MOBILITY (APP BRAND) ---
   if (normalized.includes('gkd') || normalized.includes('mobility')) {
     return (
-      <svg viewBox="0 0 100 100" className={`rounded-xl overflow-hidden shadow-md ${className}`} xmlns="http://www.w3.org/2000/svg">
-        <rect width="100" height="100" rx="22" fill="#0B132B" stroke="#0077FE" strokeWidth="2" />
-        <text x="50" y="52" fill="#FFFFFF" fontFamily="Arial, sans-serif" fontWeight="900" fontSize="22" textAnchor="middle" letterSpacing="-0.5">GKD</text>
-        <text x="50" y="70" fill="#00A2FE" fontFamily="Arial, sans-serif" fontWeight="700" fontSize="9" textAnchor="middle" letterSpacing="1.5">MOBILITY</text>
-      </svg>
+      <div className={`bg-white p-1 rounded-xl flex items-center justify-center overflow-hidden shadow-md border border-white/10 ${className}`}>
+        <img
+          src={logoGkdClean}
+          alt="GKD Mobility"
+          className="w-full h-full object-contain"
+        />
+      </div>
     );
   }
 

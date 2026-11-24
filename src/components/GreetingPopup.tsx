@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Sparkles, Calendar, User, X, ArrowRight, Award } from 'lucide-react';
 import { CreditCard } from '../types';
 import { BankLogo } from './BankLogo';
+import { GkbLogo } from './GkbLogo';
 
 interface GreetingPopupProps {
   isOpen: boolean;
@@ -179,11 +180,14 @@ export const GreetingPopup: React.FC<GreetingPopupProps> = ({
 
         {/* Header Greeting */}
         <div className="mb-6">
-          <div className="flex items-center gap-2 mb-1">
-            <span className={`text-xs font-bold uppercase tracking-widest px-2.5 py-0.5 rounded-full border ${cardTheme.badgeBg}`}>
-              {timeGreeting}
-            </span>
-            <span className="text-xs text-slate-400 capitalize">{formattedDate}</span>
+          <div className="flex items-center gap-2.5 mb-2 pr-8">
+            <GkbLogo variant="compact" className="!h-8 !w-[34px] !rounded-lg !p-0.5 shrink-0" />
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`text-xs font-bold uppercase tracking-widest px-2.5 py-0.5 rounded-full border ${cardTheme.badgeBg}`}>
+                {timeGreeting}
+              </span>
+              <span className="text-xs text-slate-400 capitalize">{formattedDate}</span>
+            </div>
           </div>
 
           <div className="flex items-center justify-between">

@@ -702,7 +702,10 @@ export default function App() {
             >
               Política de Privacidade
             </button>
-            <span className="text-slate-600">GKD Melhor Dia © 2026</span>
+            <span className="text-slate-600 inline-flex items-center gap-1.5">
+              <GkbLogo variant="compact" className="!h-5 !w-[22px] !rounded !p-0.5" />
+              GKD Melhor Dia © 2026
+            </span>
           </div>
         </div>
       </footer>
@@ -771,7 +774,7 @@ export default function App() {
               </button>
             </div>
             
-            <div className="w-full max-w-[280px] py-4">
+            <div className="flex justify-center mt-1 mb-2">
               <GkbLogo variant="full" />
             </div>
 

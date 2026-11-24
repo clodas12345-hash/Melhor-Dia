@@ -1,4 +1,5 @@
 import React from 'react';
+import logoGkdClean from '../assets/images/logo_gkd_mobility_clean.png';
 
 interface GkbLogoProps {
   variant?: 'compact' | 'full';
@@ -6,29 +7,24 @@ interface GkbLogoProps {
 }
 
 export const GkbLogo: React.FC<GkbLogoProps> = ({ variant = 'full', className = "" }) => {
-  // Usando a imagem oficial presente no sistema
-  const logoSrc = "/src/assets/images/logo_gkd_mobility_1788525652610.jpg";
-
   if (variant === 'compact') {
     return (
-      <div className={`relative flex items-center justify-center bg-white rounded-lg overflow-hidden shadow-sm shrink-0 h-9 w-auto min-w-[36px] ${className}`}>
+      <div className={`relative flex items-center justify-center bg-white rounded-xl overflow-hidden shadow-sm shrink-0 h-10 w-[42px] p-1 ${className}`}>
         <img 
-          src={logoSrc} 
+          src={logoGkdClean} 
           alt="GKD Mobility" 
           className="h-full w-full object-contain"
-          referrerPolicy="no-referrer"
         />
       </div>
     );
   }
 
   return (
-    <div className={`bg-white rounded-3xl shadow-xl flex items-center justify-center select-none ${className} mx-auto overflow-hidden w-full max-w-[320px] aspect-square`}>
+    <div className={`bg-white rounded-2xl shadow-xl inline-flex items-center justify-center select-none mx-auto overflow-hidden w-full max-w-[210px] aspect-[666/631] p-3 ${className}`}>
       <img 
-        src={logoSrc} 
+        src={logoGkdClean} 
         alt="GKD Mobility" 
-        className="w-full h-full object-contain p-1"
-        referrerPolicy="no-referrer"
+        className="w-full h-full object-contain"
       />
     </div>
   );
