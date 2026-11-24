@@ -73,32 +73,7 @@ jobs:
         run: npx cap sync android
 
       - name: Corrigir conflitos e configurar build.gradle
-        run: |
-          GRADLE_FILE="android/app/build.gradle"
-          
-          # Auto-incremento de versão
-          BUILD_NUM=${{ github.run_number }}
-          sed -i "s/versionCode 1/versionCode $BUILD_NUM/g" "$GRADLE_FILE"
-          sed -i "s/versionName \"1.0\"/versionName \"1.0.$BUILD_NUM\"/g" "$GRADLE_FILE"
-          
-          # Correção de conflito Kotlin
-          cat >> "$GRADLE_FILE" << 'EOF'
-configurations.all {
-    exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
-    exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
-}
-EOF
-
-          # Forçar signingConfig para usar o keystore decodificado
-          if ! grep -q "android.signingConfigs.debug.storeFile" "$GRADLE_FILE"; then
-            cat >> "$GRADLE_FILE" << 'EOF'
-android.signingConfigs.debug.storeFile = new File(System.getProperty("user.home") + "/.android/debug.keystore")
-android.signingConfigs.debug.storePassword = "android"
-android.signingConfigs.debug.keyAlias = "androiddebugkey"
-android.signingConfigs.debug.keyPassword = "android"
-android.buildTypes.debug.signingConfig = android.signingConfigs.debug
-EOF
-          fi
+        run: node scripts/patch-gradle.mjs
 
       - name: Compilar o APK
         working-directory: android
