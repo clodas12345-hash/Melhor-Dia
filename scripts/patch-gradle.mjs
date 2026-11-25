@@ -71,3 +71,17 @@ const stylesV35Content = `<?xml version="1.0" encoding="utf-8"?>
 `;
 fs.writeFileSync(stylesV35Path, stylesV35Content, 'utf8');
 console.log('Successfully created values-v35/styles.xml');
+
+// 6. Ensure AndroidManifest.xml uses the app notification icon for FCM Push Notifications as well
+const manifestPath = path.resolve('android/app/src/main/AndroidManifest.xml');
+if (fs.existsSync(manifestPath)) {
+  let manifestContent = fs.readFileSync(manifestPath, 'utf8');
+  if (!manifestContent.includes('com.google.firebase.messaging.default_notification_icon')) {
+    manifestContent = manifestContent.replace(
+      /<\/application>/,
+      `    <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/ic_stat_icon_config_sample" />\n    </application>`
+    );
+    fs.writeFileSync(manifestPath, manifestContent, 'utf8');
+    console.log('Successfully patched AndroidManifest.xml with default_notification_icon');
+  }
+}

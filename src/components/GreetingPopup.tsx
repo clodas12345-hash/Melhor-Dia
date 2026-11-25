@@ -8,12 +8,14 @@ interface GreetingPopupProps {
   isOpen: boolean;
   onClose: () => void;
   creditCards: CreditCard[];
+  onNameSaved?: (name: string) => void;
 }
 
 export const GreetingPopup: React.FC<GreetingPopupProps> = ({
   isOpen,
   onClose,
   creditCards,
+  onNameSaved,
 }) => {
   const [userName, setUserName] = useState<string>(() => {
     return localStorage.getItem('gkb_user_name') || '';
@@ -37,9 +39,11 @@ export const GreetingPopup: React.FC<GreetingPopupProps> = ({
   const handleSaveName = (e: React.FormEvent) => {
     e.preventDefault();
     if (tempName.trim()) {
-      setUserName(tempName.trim());
-      localStorage.setItem('gkb_user_name', tempName.trim());
+      const cleaned = tempName.trim();
+      setUserName(cleaned);
+      localStorage.setItem('gkb_user_name', cleaned);
       setIsEditingName(false);
+      onNameSaved?.(cleaned);
     }
   };
 

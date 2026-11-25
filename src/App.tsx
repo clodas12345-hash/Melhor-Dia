@@ -121,11 +121,18 @@ export default function App() {
   const [cloudStatus, setCloudStatus] = useState<'syncing' | 'synced' | 'offline'>('synced');
   const [notifPermStatus, setNotifPermStatus] = useState<string>('checking...');
   const [notifFeedback, setNotifFeedback] = useState<string | null>(null);
+  const [notifTime, setNotifTime] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('gkd_notif_time');
+      if (saved && /^\d{2}:\d{2}$/.test(saved)) return saved;
+    } catch {
+      // ignore
+    }
+    return '06:00';
+  });
 
-  const getBestCardToday = (cards: CreditCard[]) => {
+  const getBestCardForDay = (cards: CreditCard[], queryDay: number) => {
     if (!cards || cards.length === 0) return null;
-    const today = new Date();
-    const queryDay = today.getDate();
     const getDaysSince = (day: number) => {
       let diff = queryDay - day;
       if (diff < 0) diff += 31;
@@ -135,21 +142,63 @@ export default function App() {
     return sorted[0];
   };
 
-  const scheduleDailyMorningNotification = async (cards: CreditCard[]) => {
-    try {
-      const best = getBestCardToday(cards);
-      const cardName = best ? best.name : 'GKD Platinum';
-      
-      const now = new Date();
-      const scheduledTime = new Date();
-      scheduledTime.setHours(6, 0, 0, 0);
-      if (scheduledTime.getTime() <= now.getTime()) {
-        scheduledTime.setDate(scheduledTime.getDate() + 1);
-      }
+  const buildMorningNotificationContent = (cards: CreditCard[], targetDate: Date, userNameOverride?: string) => {
+    const savedName = (userNameOverride ?? localStorage.getItem('gkb_user_name') ?? '').trim();
+    const title = savedName ? `Bom dia, ${savedName}!` : 'Bom dia!';
 
+    const queryDay = targetDate.getDate();
+    const best = getBestCardForDay(cards, queryDay);
+
+    if (!best) {
+      const body = 'Hoje não há cartões cadastrados. Adicione seus cartões para saber qual usar com até 40 dias de prazo!';
+      return { title, body };
+    }
+
+    const cardLabel = best.segment ? `${best.name} (${best.segment})` : best.name;
+    const diff = queryDay - best.bestDay;
+    let daysToPay: number;
+    let statusDetail: string;
+
+    if (diff >= 0) {
+      daysToPay = Math.min(40, 40 - diff);
+      statusDetail = diff === 0
+        ? 'Melhor dia para comprar! A fatura fecha HOJE.'
+        : `Fatura fechou há ${diff} ${diff === 1 ? 'dia' : 'dias'} (cai no próximo mês).`;
+    } else {
+      const daysUntilClose = Math.abs(diff);
+      daysToPay = 10 + daysUntilClose;
+      statusDetail = `Fatura fecha em ${daysUntilClose} ${daysUntilClose === 1 ? 'dia' : 'dias'}.`;
+    }
+
+    const body = `Hoje o melhor cartão a ser usado é o ${cardLabel}. ${statusDetail} Melhor dia: dia ${best.bestDay} · Prazo est. de ~${daysToPay} dias para pagar.`;
+    return { title, body };
+  };
+
+  const parseNotifTime = (timeStr?: string): { hour: number; minute: number } => {
+    const raw = timeStr || localStorage.getItem('gkd_notif_time') || notifTime || '06:00';
+    const match = /^(\d{1,2}):(\d{1,2})$/.exec(raw.trim());
+    if (match) {
+      const hour = Math.min(23, Math.max(0, Number(match[1])));
+      const minute = Math.min(59, Math.max(0, Number(match[2])));
+      if (!Number.isNaN(hour) && !Number.isNaN(minute)) {
+        return { hour, minute };
+      }
+    }
+    return { hour: 6, minute: 0 };
+  };
+
+  const scheduleDailyMorningNotification = async (
+    cards: CreditCard[],
+    userNameOverride?: string,
+    timeOverride?: string
+  ) => {
+    try {
+      // Cancela agendamentos diários anteriores (legado 888888 e janela de 30 dias 888801..888830)
       try {
         const pending = await LocalNotifications.getPending();
-        const existingDaily = pending.notifications.filter(n => n.id === 888888);
+        const existingDaily = pending.notifications.filter(
+          (n) => n.id === 888888 || (n.id >= 888801 && n.id <= 888830)
+        );
         if (existingDaily.length > 0) {
           await LocalNotifications.cancel({ notifications: existingDaily });
         }
@@ -157,28 +206,56 @@ export default function App() {
         // ignore
       }
 
+      const { hour, minute } = parseNotifTime(timeOverride);
+      const now = new Date();
+      const firstRun = new Date();
+      firstRun.setHours(hour, minute, 0, 0);
+      if (firstRun.getTime() <= now.getTime()) {
+        firstRun.setDate(firstRun.getDate() + 1);
+      }
+
+      // Agenda os próximos 30 dias no horário escolhido com o cálculo exato do melhor cartão e dias de cada data
+      const notificationsToSchedule = Array.from({ length: 30 }, (_, index) => {
+        const targetDate = new Date(firstRun);
+        targetDate.setDate(firstRun.getDate() + index);
+        const { title, body } = buildMorningNotificationContent(cards, targetDate, userNameOverride);
+
+        return {
+          id: 888801 + index,
+          channelId: 'gkd_alerta',
+          title,
+          body,
+          largeBody: body,
+          summaryText: 'GKD Melhor Dia',
+          smallIcon: 'ic_stat_icon_config_sample',
+          schedule: {
+            at: targetDate,
+            allowWhileIdle: true,
+          },
+          sound: 'default',
+        };
+      });
+
       await LocalNotifications.schedule({
-        notifications: [
-          {
-            id: 888888,
-            channelId: 'gkd_alerta',
-            title: '☀️ Bom dia! Qual cartão usar hoje?',
-            body: `Hoje o melhor cartão para economizar é o ${cardName}. Garanta até 40 dias de prazo!`,
-            smallIcon: 'ic_stat_icon_config_sample',
-            schedule: {
-              at: scheduledTime,
-              every: 'day'
-            },
-            sound: 'default'
-          }
-        ]
+        notifications: notificationsToSchedule,
       });
     } catch (err) {
-      console.warn('Erro ao agendar notificação diária das 6h:', err);
+      console.warn('Erro ao agendar notificações diárias:', err);
     }
   };
 
-  // 1 & 2. Ao abrir o app, solicita permissão POST_NOTIFICATIONS (Android 13+), cria o canal e agenda a notificação diária às 6h
+  const handleSaveNotifTime = async (newTime: string) => {
+    if (!/^\d{2}:\d{2}$/.test(newTime)) return;
+    setNotifTime(newTime);
+    try {
+      localStorage.setItem('gkd_notif_time', newTime);
+    } catch {
+      // ignore
+    }
+    await scheduleDailyMorningNotification(creditCards, undefined, newTime);
+  };
+
+  // 1 & 2. Ao abrir o app, solicita permissão POST_NOTIFICATIONS (Android 13+), cria o canal e agenda as notificações diárias às 6h
   useEffect(() => {
     async function initLocalNotifications() {
       try {
@@ -213,7 +290,7 @@ export default function App() {
     initLocalNotifications();
   }, []);
 
-  // 3 & 4. Função para criar canal e agendar notificação em 5 segundos
+  // 3 & 4. Função para criar canal e agendar notificação de teste personalizada em 5 segundos
   const handleTestNotification = async () => {
     try {
       const perm = await LocalNotifications.requestPermissions();
@@ -230,18 +307,23 @@ export default function App() {
       }).catch(() => {});
 
       const uniqueId = Math.floor((Date.now() % 2000000000) + Math.random() * 1000);
+      const { title, body } = buildMorningNotificationContent(creditCards, new Date());
 
       await LocalNotifications.schedule({
         notifications: [
           {
             id: uniqueId,
             channelId: 'gkd_alerta',
-            title: 'GKD Melhor Dia',
-            body: 'Notificação de teste disparada com sucesso! Confira o melhor cartão de hoje.',
+            title,
+            body,
+            largeBody: body,
+            summaryText: 'GKD Melhor Dia',
             smallIcon: 'ic_stat_icon_config_sample',
             schedule: {
               at: new Date(Date.now() + 5000),
+              allowWhileIdle: true,
             },
+            sound: 'default',
           },
         ],
       });
@@ -388,6 +470,7 @@ export default function App() {
                 const cleanCards = data.cards.map(cleanCardForStorage);
                 setCreditCards(cleanCards);
                 localStorage.setItem('melhor_cartao_cards', JSON.stringify(cleanCards));
+                scheduleDailyMorningNotification(cleanCards);
               }
             }
           } else {
@@ -617,10 +700,13 @@ export default function App() {
 
                     <button
                       onClick={() => { setShowPermissionsModal(true); setShowSettingsMenu(false); }}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition text-left"
+                      className="w-full flex items-center justify-between gap-2 px-4 py-2.5 text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition text-left"
                     >
-                      <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                      <span>Permissões & Notificações</span>
+                      <span className="flex items-center gap-3">
+                        <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                        <span>Permissões & Notificações</span>
+                      </span>
+                      <span className="text-[11px] font-mono text-purple-300">{notifTime}</span>
                     </button>
                   </motion.div>
                 </>
@@ -857,7 +943,11 @@ export default function App() {
               </button>
             </div>
             <div className="p-4 sm:p-6 overflow-y-auto">
-              <PermissionsWidget />
+              <PermissionsWidget
+                notifTime={notifTime}
+                onSaveNotifTime={handleSaveNotifTime}
+                onTestNotification={handleTestNotification}
+              />
             </div>
           </div>
         </div>
@@ -868,6 +958,7 @@ export default function App() {
         isOpen={showGreeting}
         onClose={() => setShowGreeting(false)}
         creditCards={creditCards}
+        onNameSaved={(name) => scheduleDailyMorningNotification(creditCards, name)}
       />
     </div>
   );
