@@ -3,6 +3,11 @@ import { Sparkles, Calendar, User, X, ArrowRight, Award } from 'lucide-react';
 import { CreditCard } from '../types';
 import { BankLogo } from './BankLogo';
 import { GkbLogo } from './GkbLogo';
+import {
+  formatShortDate,
+  getCardPaymentDetails,
+  sortCardsByBestTerm,
+} from '../lib/cardCalculations';
 
 interface GreetingPopupProps {
   isOpen: boolean;
@@ -49,37 +54,23 @@ export const GreetingPopup: React.FC<GreetingPopupProps> = ({
 
   if (!isOpen) return null;
 
-  // Calculate best card today
+  // Calculate best card today using real closing and due dates
   const today = new Date();
   const currentDay = today.getDate();
 
-  const getDaysSince = (day: number, queryDay: number) => {
-    let diff = queryDay - day;
-    if (diff < 0) diff += 31;
-    return diff;
-  };
-
-  const sortedCards = [...creditCards].sort(
-    (a, b) => getDaysSince(a.bestDay, currentDay) - getDaysSince(b.bestDay, currentDay)
-  );
-
+  const sortedCards = sortCardsByBestTerm(creditCards, today);
   const bestCard = sortedCards[0];
+  const bestDetails = bestCard ? getCardPaymentDetails(bestCard, today) : null;
   const secondCard = sortedCards[1];
 
-  // Calculate when it changes
-  // The best card changes when the query day reaches the next card's best cycle.
-  // Or simply when does the best card switch?
-  // Let's find how many days until the next card becomes better.
+  // Find when another card yields strictly more days than the current bestCard
   let daysUntilChange = 1;
   let nextCardName = secondCard ? secondCard.name : 'Nenhum outro cartão';
 
   if (bestCard && secondCard) {
-    // Check upcoming days to see when secondCard or another card beats bestCard
-    for (let d = 1; d <= 31; d++) {
-      const futureDay = ((currentDay - 1 + d) % 31) + 1;
-      const futureSorted = [...creditCards].sort(
-        (a, b) => getDaysSince(a.bestDay, futureDay) - getDaysSince(b.bestDay, futureDay)
-      );
+    for (let d = 1; d <= 60; d++) {
+      const futureDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + d);
+      const futureSorted = sortCardsByBestTerm(creditCards, futureDate);
       if (futureSorted[0].id !== bestCard.id) {
         daysUntilChange = d;
         nextCardName = futureSorted[0].name;
@@ -231,24 +222,24 @@ export const GreetingPopup: React.FC<GreetingPopupProps> = ({
           <div className="p-4 bg-white/5 border border-white/10 rounded-2xl text-center text-sm text-slate-400 mb-6">
             Nenhum cartão cadastrado. Adicione cartões para ver a recomendação.
           </div>
-        ) : bestCard ? (
+        ) : bestCard && bestDetails ? (
           <div className={`bg-gradient-to-r from-black/60 via-black/40 to-black/60 border ${cardTheme.borderColor} rounded-2xl p-4 sm:p-5 mb-6 relative shadow-inner`}>
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
               <span className={`text-xs font-bold ${cardTheme.accentText} flex items-center gap-1.5`}>
                 <Award className={`w-4 h-4 ${cardTheme.accentText}`} />
                 Melhor cartão para hoje ({currentDay})
               </span>
               <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded-md border border-emerald-500/30">
-                Melhor dia: {bestCard.bestDay}
+                Fecha {bestCard.bestDay} · Vence {bestDetails.dueDay}
               </span>
             </div>
 
             <div className="flex items-center gap-3.5 bg-black/40 p-3.5 rounded-xl border border-white/10">
-              <BankLogo name={bestCard.name} customLogo={bestCard.customLogo} className="w-12 h-12 shadow-md shrink-0" />
+              <BankLogo name={bestCard.name} segment={bestCard.segment} customLogo={bestCard.customLogo} className="w-12 h-12 shadow-md shrink-0" />
               <div className="min-w-0 flex-1">
                 <h4 className="text-white font-black text-base truncate">{bestCard.name}</h4>
                 <p className="text-xs text-emerald-400 font-medium">
-                  Fatura fechou recentemente. Máximo prazo sem juros!
+                  {bestDetails.daysToPay} {bestDetails.daysToPay === 1 ? 'dia real' : 'dias reais'} de prazo (vence em {formatShortDate(bestDetails.dueDate)})!
                 </p>
               </div>
             </div>

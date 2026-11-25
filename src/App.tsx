@@ -14,7 +14,7 @@ import {
   Bell
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { CreditCard } from './types';
+import { CreditCard, NotificationScheduleSlot } from './types';
 import { BestCardWidget } from './components/BestCardWidget';
 import { CardManager } from './components/CardManager';
 import { GkbLogo } from './components/GkbLogo';
@@ -26,6 +26,12 @@ import { seedInitialLogos } from './lib/logoMemory';
 import { setupPushNotifications } from './lib/push';
 import { App as CapApp } from '@capacitor/app';
 import { LocalNotifications } from '@capacitor/local-notifications';
+import {
+  clampDayOfMonth,
+  formatShortDate,
+  getCardPaymentDetails,
+  sortCardsByBestTerm,
+} from './lib/cardCalculations';
 
 enum OperationType {
   CREATE = 'create',
@@ -65,17 +71,20 @@ const DEFAULT_CARDS: CreditCard[] = [
   {
     id: 'gkd-0',
     name: 'GKD Platinum',
-    bestDay: 10
+    bestDay: 10,
+    dueDay: 20,
   },
   {
     id: 'nu-1',
     name: 'Nubank',
-    bestDay: 5
+    bestDay: 5,
+    dueDay: 12,
   },
   {
     id: 'itau-2',
     name: 'Itaú Click',
-    bestDay: 1
+    bestDay: 1,
+    dueDay: 10,
   }
 ];
 
@@ -84,8 +93,11 @@ export default function App() {
     const clean: any = {
       id: String(c.id),
       name: String(c.name).trim(),
-      bestDay: Number(c.bestDay) || 1
+      bestDay: clampDayOfMonth(Number(c.bestDay) || 1),
     };
+    if (c.dueDay !== undefined && c.dueDay !== null && !Number.isNaN(Number(c.dueDay))) {
+      clean.dueDay = clampDayOfMonth(Number(c.dueDay));
+    }
     if (c.segment && String(c.segment).trim()) {
       clean.segment = String(c.segment).trim();
     }
@@ -121,61 +133,68 @@ export default function App() {
   const [cloudStatus, setCloudStatus] = useState<'syncing' | 'synced' | 'offline'>('synced');
   const [notifPermStatus, setNotifPermStatus] = useState<string>('checking...');
   const [notifFeedback, setNotifFeedback] = useState<string | null>(null);
-  const [notifTime, setNotifTime] = useState<string>(() => {
+  const [notifSlots, setNotifSlots] = useState<NotificationScheduleSlot[]>(() => {
+    const fallbackLegacyTime = (() => {
+      try {
+        const legacy = localStorage.getItem('gkd_notif_time');
+        if (legacy && /^\d{2}:\d{2}$/.test(legacy)) return legacy;
+      } catch {
+        // ignore
+      }
+      return '06:00';
+    })();
+
+    const defaults: NotificationScheduleSlot[] = [
+      { id: 0, time: fallbackLegacyTime, enabled: true },
+      { id: 1, time: '12:00', enabled: false },
+      { id: 2, time: '18:00', enabled: false },
+    ];
+
     try {
-      const saved = localStorage.getItem('gkd_notif_time');
-      if (saved && /^\d{2}:\d{2}$/.test(saved)) return saved;
+      const savedList = localStorage.getItem('gkd_notif_times');
+      if (savedList) {
+        const parsed = JSON.parse(savedList);
+        if (Array.isArray(parsed) && parsed.length === 3) {
+          return parsed.map((item, idx) => ({
+            id: idx,
+            time: typeof item?.time === 'string' && /^\d{2}:\d{2}$/.test(item.time) ? item.time : defaults[idx].time,
+            enabled: Boolean(item?.enabled),
+          }));
+        }
+      }
     } catch {
       // ignore
     }
-    return '06:00';
+    return defaults;
   });
-
-  const getBestCardForDay = (cards: CreditCard[], queryDay: number) => {
-    if (!cards || cards.length === 0) return null;
-    const getDaysSince = (day: number) => {
-      let diff = queryDay - day;
-      if (diff < 0) diff += 31;
-      return diff;
-    };
-    const sorted = [...cards].sort((a, b) => getDaysSince(a.bestDay) - getDaysSince(b.bestDay));
-    return sorted[0];
-  };
 
   const buildMorningNotificationContent = (cards: CreditCard[], targetDate: Date, userNameOverride?: string) => {
     const savedName = (userNameOverride ?? localStorage.getItem('gkb_user_name') ?? '').trim();
-    const title = savedName ? `Bom dia, ${savedName}!` : 'Bom dia!';
+    const hour = targetDate.getHours();
+    let timeGreeting = 'Bom dia';
+    if (hour >= 12 && hour < 18) timeGreeting = 'Boa tarde';
+    else if (hour >= 18 || hour < 5) timeGreeting = 'Boa noite';
+    const title = savedName ? `${timeGreeting}, ${savedName}!` : `${timeGreeting}!`;
 
-    const queryDay = targetDate.getDate();
-    const best = getBestCardForDay(cards, queryDay);
-
-    if (!best) {
-      const body = 'Hoje não há cartões cadastrados. Adicione seus cartões para saber qual usar com até 40 dias de prazo!';
+    if (!cards || cards.length === 0) {
+      const body = 'Hoje não há cartões cadastrados. Adicione seus cartões para saber qual usar com mais prazo!';
       return { title, body };
     }
 
+    const sorted = sortCardsByBestTerm(cards, targetDate);
+    const best = sorted[0];
+    const details = getCardPaymentDetails(best, targetDate);
+
     const cardLabel = best.segment ? `${best.name} (${best.segment})` : best.name;
-    const diff = queryDay - best.bestDay;
-    let daysToPay: number;
-    let statusDetail: string;
+    const dueFormatted = formatShortDate(details.dueDate);
+    const prazoLabel = details.isEstimatedDueDay ? `~${details.daysToPay}` : `${details.daysToPay}`;
 
-    if (diff >= 0) {
-      daysToPay = Math.min(40, 40 - diff);
-      statusDetail = diff === 0
-        ? 'Melhor dia para comprar! A fatura fecha HOJE.'
-        : `Fatura fechou há ${diff} ${diff === 1 ? 'dia' : 'dias'} (cai no próximo mês).`;
-    } else {
-      const daysUntilClose = Math.abs(diff);
-      daysToPay = 10 + daysUntilClose;
-      statusDetail = `Fatura fecha em ${daysUntilClose} ${daysUntilClose === 1 ? 'dia' : 'dias'}.`;
-    }
-
-    const body = `Hoje o melhor cartão a ser usado é o ${cardLabel}. ${statusDetail} Melhor dia: dia ${best.bestDay} · Prazo est. de ~${daysToPay} dias para pagar.`;
+    const body = `Hoje o melhor cartão a ser usado é o ${cardLabel}. ${details.statusText} Fecha dia ${details.closingDay} · Vence dia ${details.dueDay} (${dueFormatted}) · ${prazoLabel} ${details.daysToPay === 1 ? 'dia' : 'dias'} de prazo.`;
     return { title, body };
   };
 
   const parseNotifTime = (timeStr?: string): { hour: number; minute: number } => {
-    const raw = timeStr || localStorage.getItem('gkd_notif_time') || notifTime || '06:00';
+    const raw = timeStr || '06:00';
     const match = /^(\d{1,2}):(\d{1,2})$/.exec(raw.trim());
     if (match) {
       const hour = Math.min(23, Math.max(0, Number(match[1])));
@@ -190,14 +209,17 @@ export default function App() {
   const scheduleDailyMorningNotification = async (
     cards: CreditCard[],
     userNameOverride?: string,
-    timeOverride?: string
+    slotsOverride?: NotificationScheduleSlot[]
   ) => {
     try {
-      // Cancela agendamentos diários anteriores (legado 888888 e janela de 30 dias 888801..888830)
+      // Cancela agendamentos diários anteriores (legado 888888, janela antiga 888801..888830 e 3 faixas 888101..888330)
       try {
         const pending = await LocalNotifications.getPending();
         const existingDaily = pending.notifications.filter(
-          (n) => n.id === 888888 || (n.id >= 888801 && n.id <= 888830)
+          (n) =>
+            n.id === 888888 ||
+            (n.id >= 888801 && n.id <= 888830) ||
+            (n.id >= 888101 && n.id <= 888330)
         );
         if (existingDaily.length > 0) {
           await LocalNotifications.cancel({ notifications: existingDaily });
@@ -206,34 +228,53 @@ export default function App() {
         // ignore
       }
 
-      const { hour, minute } = parseNotifTime(timeOverride);
+      const slotsToUse = slotsOverride || notifSlots;
+      const activeSlots = slotsToUse.filter((s) => s.enabled && /^\d{2}:\d{2}$/.test(s.time));
+      if (activeSlots.length === 0) return;
+
       const now = new Date();
-      const firstRun = new Date();
-      firstRun.setHours(hour, minute, 0, 0);
-      if (firstRun.getTime() <= now.getTime()) {
-        firstRun.setDate(firstRun.getDate() + 1);
-      }
+      const notificationsToSchedule: Array<{
+        id: number;
+        channelId: string;
+        title: string;
+        body: string;
+        largeBody: string;
+        summaryText: string;
+        smallIcon: string;
+        schedule: { at: Date; allowWhileIdle: boolean };
+        sound: string;
+      }> = [];
 
-      // Agenda os próximos 30 dias no horário escolhido com o cálculo exato do melhor cartão e dias de cada data
-      const notificationsToSchedule = Array.from({ length: 30 }, (_, index) => {
-        const targetDate = new Date(firstRun);
-        targetDate.setDate(firstRun.getDate() + index);
-        const { title, body } = buildMorningNotificationContent(cards, targetDate, userNameOverride);
+      // Agenda os próximos 15 dias para cada um dos até 3 horários ativos (máx. 45 notificações)
+      activeSlots.forEach((slot) => {
+        const { hour, minute } = parseNotifTime(slot.time);
+        const firstRun = new Date();
+        firstRun.setHours(hour, minute, 0, 0);
+        if (firstRun.getTime() <= now.getTime()) {
+          firstRun.setDate(firstRun.getDate() + 1);
+        }
 
-        return {
-          id: 888801 + index,
-          channelId: 'gkd_alerta',
-          title,
-          body,
-          largeBody: body,
-          summaryText: 'GKD Melhor Dia',
-          smallIcon: 'ic_stat_icon_config_sample',
-          schedule: {
-            at: targetDate,
-            allowWhileIdle: true,
-          },
-          sound: 'default',
-        };
+        const slotOffset = (Math.max(0, Math.min(2, slot.id)) + 1) * 100;
+        for (let index = 0; index < 15; index++) {
+          const targetDate = new Date(firstRun);
+          targetDate.setDate(firstRun.getDate() + index);
+          const { title, body } = buildMorningNotificationContent(cards, targetDate, userNameOverride);
+
+          notificationsToSchedule.push({
+            id: 888001 + slotOffset + index,
+            channelId: 'gkd_alerta',
+            title,
+            body,
+            largeBody: body,
+            summaryText: 'GKD Melhor Dia',
+            smallIcon: 'ic_stat_icon_config_sample',
+            schedule: {
+              at: targetDate,
+              allowWhileIdle: true,
+            },
+            sound: 'default',
+          });
+        }
       });
 
       await LocalNotifications.schedule({
@@ -244,15 +285,23 @@ export default function App() {
     }
   };
 
-  const handleSaveNotifTime = async (newTime: string) => {
-    if (!/^\d{2}:\d{2}$/.test(newTime)) return;
-    setNotifTime(newTime);
+  const handleSaveNotifSlots = async (newSlots: NotificationScheduleSlot[]) => {
+    const normalized = newSlots.slice(0, 3).map((slot, idx) => ({
+      id: idx,
+      time: /^\d{2}:\d{2}$/.test(slot.time) ? slot.time : '06:00',
+      enabled: Boolean(slot.enabled),
+    }));
+    setNotifSlots(normalized);
     try {
-      localStorage.setItem('gkd_notif_time', newTime);
+      localStorage.setItem('gkd_notif_times', JSON.stringify(normalized));
+      const firstActive = normalized.find((s) => s.enabled) || normalized[0];
+      if (firstActive) {
+        localStorage.setItem('gkd_notif_time', firstActive.time);
+      }
     } catch {
       // ignore
     }
-    await scheduleDailyMorningNotification(creditCards, undefined, newTime);
+    await scheduleDailyMorningNotification(creditCards, undefined, normalized);
   };
 
   // 1 & 2. Ao abrir o app, solicita permissão POST_NOTIFICATIONS (Android 13+), cria o canal e agenda as notificações diárias às 6h
@@ -706,7 +755,14 @@ export default function App() {
                         <ShieldCheck className="w-4 h-4 text-emerald-400" />
                         <span>Permissões & Notificações</span>
                       </span>
-                      <span className="text-[11px] font-mono text-purple-300">{notifTime}</span>
+                      <span className="text-[11px] font-mono text-purple-300">
+                        {(() => {
+                          const active = notifSlots.filter((s) => s.enabled);
+                          if (active.length === 0) return 'Off';
+                          if (active.length === 1) return active[0].time;
+                          return `${active.length} horários`;
+                        })()}
+                      </span>
                     </button>
                   </motion.div>
                 </>
@@ -944,8 +1000,8 @@ export default function App() {
             </div>
             <div className="p-4 sm:p-6 overflow-y-auto">
               <PermissionsWidget
-                notifTime={notifTime}
-                onSaveNotifTime={handleSaveNotifTime}
+                notifSlots={notifSlots}
+                onSaveNotifSlots={handleSaveNotifSlots}
                 onTestNotification={handleTestNotification}
               />
             </div>

@@ -1,16 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { Shield, Bell, MapPin, Camera, Mic, CheckCircle, AlertCircle, Sparkles, Clock } from 'lucide-react';
 import { LocalNotifications } from '@capacitor/local-notifications';
+import { NotificationScheduleSlot } from '../types';
 
 interface PermissionsWidgetProps {
-  notifTime?: string;
-  onSaveNotifTime?: (newTime: string) => Promise<void> | void;
+  notifSlots?: NotificationScheduleSlot[];
+  onSaveNotifSlots?: (slots: NotificationScheduleSlot[]) => Promise<void> | void;
   onTestNotification?: () => Promise<void> | void;
 }
 
+const DEFAULT_SLOTS: NotificationScheduleSlot[] = [
+  { id: 0, time: '06:00', enabled: true },
+  { id: 1, time: '12:00', enabled: false },
+  { id: 2, time: '18:00', enabled: false },
+];
+
+const SLOT_LABELS = ['Opção 1', 'Opção 2', 'Opção 3'];
+
 export const PermissionsWidget: React.FC<PermissionsWidgetProps> = ({
-  notifTime = '06:00',
-  onSaveNotifTime,
+  notifSlots = DEFAULT_SLOTS,
+  onSaveNotifSlots,
   onTestNotification,
 }) => {
   const [notificationStatus, setNotificationStatus] = useState<string>('default');
@@ -19,13 +28,13 @@ export const PermissionsWidget: React.FC<PermissionsWidgetProps> = ({
   const [micStatus, setMicStatus] = useState<string>('default');
   const [isRequesting, setIsRequesting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [selectedTime, setSelectedTime] = useState<string>(notifTime);
+  const [draftSlots, setDraftSlots] = useState<NotificationScheduleSlot[]>(notifSlots);
   const [timeSavedMsg, setTimeSavedMsg] = useState<string | null>(null);
   const [isSavingTime, setIsSavingTime] = useState(false);
 
   useEffect(() => {
-    setSelectedTime(notifTime);
-  }, [notifTime]);
+    setDraftSlots(notifSlots);
+  }, [notifSlots]);
 
   // Check initial permissions
   const updatePermissions = async () => {
@@ -69,18 +78,37 @@ export const PermissionsWidget: React.FC<PermissionsWidgetProps> = ({
     updatePermissions();
   }, []);
 
+  const handleToggleSlot = (slotId: number) => {
+    setDraftSlots((prev) =>
+      prev.map((slot) => (slot.id === slotId ? { ...slot, enabled: !slot.enabled } : slot))
+    );
+  };
+
+  const handleChangeSlotTime = (slotId: number, newTime: string) => {
+    setDraftSlots((prev) =>
+      prev.map((slot) =>
+        slot.id === slotId
+          ? { ...slot, time: newTime, enabled: /^\d{2}:\d{2}$/.test(newTime) ? true : slot.enabled }
+          : slot
+      )
+    );
+  };
+
+  const allValidTimes = draftSlots.every((s) => /^\d{2}:\d{2}$/.test(s.time));
+  const activeDraftCount = draftSlots.filter((s) => s.enabled).length;
+
   const handleSaveTimeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!/^\d{2}:\d{2}$/.test(selectedTime) || !onSaveNotifTime) return;
+    if (!allValidTimes || !onSaveNotifSlots) return;
     setIsSavingTime(true);
     try {
-      await onSaveNotifTime(selectedTime);
-      const [h, m] = selectedTime.split(':').map(Number);
-      const now = new Date();
-      const target = new Date();
-      target.setHours(h, m, 0, 0);
-      const whenLabel = target.getTime() > now.getTime() ? 'hoje' : 'amanhã';
-      setTimeSavedMsg(`Horário salvo! Próximo envio automático ${whenLabel} às ${selectedTime}.`);
+      await onSaveNotifSlots(draftSlots);
+      const activeTimes = draftSlots.filter((s) => s.enabled).map((s) => s.time);
+      if (activeTimes.length === 0) {
+        setTimeSavedMsg('Alertas diários desativados. Ative ao menos um horário quando quiser receber.');
+      } else {
+        setTimeSavedMsg(`Horários salvos! Alertas programados para: ${activeTimes.join(', ')}.`);
+      }
       setTimeout(() => setTimeSavedMsg(null), 6000);
     } finally {
       setIsSavingTime(false);
@@ -160,43 +188,82 @@ export const PermissionsWidget: React.FC<PermissionsWidgetProps> = ({
 
   return (
     <div className="w-full space-y-5">
-      {/* Horário da Notificação Diária Melhor Dia */}
+      {/* 3 Opções de Horário da Notificação Diária Melhor Dia */}
       <form
         onSubmit={handleSaveTimeSubmit}
-        className="w-full bg-[#111114]/90 border border-purple-500/20 rounded-3xl p-5 backdrop-blur-md relative overflow-hidden shadow-xl space-y-3"
+        className="w-full bg-[#111114]/90 border border-purple-500/20 rounded-3xl p-5 backdrop-blur-md relative overflow-hidden shadow-xl space-y-3.5"
       >
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Clock className="w-5 h-5 text-purple-400 shrink-0" />
             <div>
-              <h3 className="text-sm font-bold text-white tracking-tight">Horário do Alerta Diário</h3>
-              <p className="text-[11px] text-slate-400">Escolha a hora para receber o melhor cartão do dia</p>
+              <h3 className="text-sm font-bold text-white tracking-tight">Horários do Alerta Diário</h3>
+              <p className="text-[11px] text-slate-400">Escolha até 3 horários por dia para receber o melhor cartão</p>
             </div>
           </div>
-          <span className="text-xs font-mono font-bold text-purple-300">
-            Atual: {notifTime}
+          <span className="text-[11px] font-bold text-purple-300 bg-purple-500/15 border border-purple-500/25 px-2.5 py-1 rounded-lg whitespace-nowrap">
+            {activeDraftCount} {activeDraftCount === 1 ? 'ativo' : 'ativos'}
           </span>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 pt-1">
-          <input
-            type="time"
-            value={selectedTime}
-            onChange={(e) => setSelectedTime(e.target.value)}
-            aria-label="Horário da notificação diária"
-            className="flex-1 bg-black/60 border border-white/15 focus:border-purple-500 rounded-xl px-3.5 py-2.5 text-white font-mono font-bold text-sm focus:outline-none cursor-pointer"
-          />
-          <button
-            type="submit"
-            disabled={isSavingTime || !/^\d{2}:\d{2}$/.test(selectedTime)}
-            className="px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-purple-500/20 transition cursor-pointer disabled:opacity-50 whitespace-nowrap"
-          >
-            {isSavingTime ? 'Salvando...' : 'Salvar Horário'}
-          </button>
+        <div className="space-y-2.5 pt-1">
+          {draftSlots.map((slot, idx) => (
+            <div
+              key={slot.id}
+              className={`flex items-center justify-between gap-3 p-3 rounded-2xl border transition ${
+                slot.enabled
+                  ? 'bg-purple-500/10 border-purple-500/35'
+                  : 'bg-black/40 border-white/10 opacity-80'
+              }`}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={slot.enabled}
+                  aria-label={`Ativar ${SLOT_LABELS[idx] || `Opção ${idx + 1}`}`}
+                  onClick={() => handleToggleSlot(slot.id)}
+                  className={`relative w-10 h-6 rounded-full transition-colors cursor-pointer shrink-0 ${
+                    slot.enabled ? 'bg-purple-600' : 'bg-white/15'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${
+                      slot.enabled ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+                <div className="min-w-0">
+                  <span className="text-xs font-bold text-white block">
+                    {SLOT_LABELS[idx] || `Opção ${idx + 1}`}
+                  </span>
+                  <span className={`text-[10px] font-medium ${slot.enabled ? 'text-emerald-400' : 'text-slate-500'}`}>
+                    {slot.enabled ? 'Alerta ativo' : 'Desativado'}
+                  </span>
+                </div>
+              </div>
+
+              <input
+                type="time"
+                value={slot.time}
+                onChange={(e) => handleChangeSlotTime(slot.id, e.target.value)}
+                aria-label={`Horário ${SLOT_LABELS[idx] || `Opção ${idx + 1}`}`}
+                className="bg-black/70 border border-white/15 focus:border-purple-500 rounded-xl px-3 py-2 text-white font-mono font-bold text-sm focus:outline-none cursor-pointer"
+              />
+            </div>
+          ))}
         </div>
 
+        <button
+          type="submit"
+          disabled={isSavingTime || !allValidTimes}
+          className="w-full py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-purple-500/20 transition cursor-pointer disabled:opacity-50"
+        >
+          {isSavingTime ? 'Salvando...' : 'Salvar Horários'}
+        </button>
+
         {onTestNotification && (
-          <div className="pt-1 flex items-center justify-between gap-2 border-t border-white/5">
+          <div className="pt-2 flex items-center justify-between gap-2 border-t border-white/5">
             <span className="text-[11px] text-slate-400">Quer testar o pop-up imediatamente?</span>
             <button
               type="button"

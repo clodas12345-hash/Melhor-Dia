@@ -3,6 +3,12 @@ import { ArrowLeft, CreditCard as CardIcon, Calendar, CheckCircle2 } from 'lucid
 import { CreditCard } from '../types';
 import { BankLogo } from './BankLogo';
 import { motion } from 'motion/react';
+import {
+  formatShortDate,
+  getCardPaymentDetails,
+  parseQueryDateString,
+  sortCardsByBestTerm,
+} from '../lib/cardCalculations';
 
 interface BestCardWidgetProps {
   creditCards: CreditCard[];
@@ -66,7 +72,8 @@ export const BestCardWidget: React.FC<BestCardWidgetProps> = ({ creditCards, onO
     return `${year}-${month}-${day}`;
   });
 
-  const queryDay = new Date(queryDate + 'T00:00:00').getDate() || 1;
+  const queryDateObj = React.useMemo(() => parseQueryDateString(queryDate), [queryDate]);
+  const queryDay = queryDateObj.getDate();
   const [isScanning, setIsScanning] = useState(false);
 
   // Trigger scan animation on date change
@@ -76,37 +83,15 @@ export const BestCardWidget: React.FC<BestCardWidgetProps> = ({ creditCards, onO
     return () => clearTimeout(timer);
   }, [queryDate]);
 
-  const getDaysSince = (day: number) => {
-    let diff = queryDay - day;
-    if (diff < 0) diff += 31;
-    return diff;
-  };
-
-  const sortedCards = [...creditCards].sort((a, b) => getDaysSince(a.bestDay) - getDaysSince(b.bestDay));
+  const sortedCards = React.useMemo(
+    () => sortCardsByBestTerm(creditCards, queryDateObj),
+    [creditCards, queryDateObj]
+  );
   const bestCard = sortedCards[0];
+  const bestDetails = bestCard ? getCardPaymentDetails(bestCard, queryDateObj) : null;
   const activeCard = selectedCardId 
     ? (creditCards.find(c => c.id === selectedCardId) || bestCard)
     : bestCard;
-
-  const getPaymentDetails = (card: CreditCard) => {
-    const diff = queryDay - card.bestDay;
-    if (diff >= 0) {
-      return {
-        isClosed: true,
-        daysToPay: Math.min(40, 40 - diff),
-        status: diff === 0 
-          ? '🎯 Melhor dia para comprar! A fatura fecha HOJE.' 
-          : `✓ Fatura fechou há ${diff} ${diff === 1 ? 'dia' : 'dias'}. A cobrança entra no mês seguinte.`
-      };
-    } else {
-      const daysUntilClose = Math.abs(diff);
-      return {
-        isClosed: false,
-        daysToPay: 10 + daysUntilClose,
-        status: `⏳ Fatura fecha em ${daysUntilClose} ${daysUntilClose === 1 ? 'dia' : 'dias'}.`
-      };
-    }
-  };
 
   const getCardContainerStyle = (name: string, segment?: string) => {
     if (!name) return 'bg-[#18181B] border-white/10';
@@ -148,7 +133,7 @@ export const BestCardWidget: React.FC<BestCardWidgetProps> = ({ creditCards, onO
   const walletHeight = Math.max(220, cardHeight + (displayCardsList.length - 1) * cardStepY + 20);
 
   const cardToDisplay = (hoveredCardId && creditCards.find(c => c.id === hoveredCardId)) || activeCard;
-  const currentDetails = cardToDisplay ? getPaymentDetails(cardToDisplay) : null;
+  const currentDetails = cardToDisplay ? getCardPaymentDetails(cardToDisplay, queryDateObj) : null;
 
   return (
     <div className={`rounded-3xl p-4 sm:p-6 border relative flex flex-col transition-all duration-700 ${getCardContainerStyle(activeCard?.name || '', activeCard?.segment)}`}>
@@ -194,10 +179,10 @@ export const BestCardWidget: React.FC<BestCardWidgetProps> = ({ creditCards, onO
           </div>
         </div>
 
-        {bestCard && (
+        {bestCard && bestDetails && (
           <div className="text-[11px] text-slate-200 bg-white/5 px-3 py-2 rounded-xl border border-white/10 flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
-              <span className="text-slate-300">Melhor opção para o dia {queryDay}:</span>
+              <span className="text-slate-300">Melhor opção para {formatShortDate(queryDateObj)}:</span>
               <strong className="text-white font-bold flex items-center gap-1">
                 {bestCard.name}
                 {bestCard.segment && (
@@ -208,7 +193,7 @@ export const BestCardWidget: React.FC<BestCardWidgetProps> = ({ creditCards, onO
               </strong>
             </div>
             <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-md border border-emerald-500/30 font-semibold whitespace-nowrap">
-              Melhor dia: {bestCard.bestDay}
+              Fecha dia {bestCard.bestDay} · Vence dia {bestDetails.dueDay}
             </span>
           </div>
         )}
@@ -217,17 +202,18 @@ export const BestCardWidget: React.FC<BestCardWidgetProps> = ({ creditCards, onO
       {/* Informações de Status e Prazo (Posicionado com espaço garantido e independente, NUNCA sobreposto) */}
       {cardToDisplay && currentDetails && (
         <div className="mb-4 bg-black/70 border border-white/15 rounded-2xl p-3.5 sm:p-4 backdrop-blur-md flex flex-col gap-1.5 shadow-xl transition-all">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
             <span className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
               Status para <strong className="text-purple-300 font-bold">{cardToDisplay.name}</strong>:
             </span>
             <span className="text-xs font-black text-emerald-300 bg-emerald-500/20 px-3 py-1 rounded-xl border border-emerald-500/30 whitespace-nowrap">
-              Prazo Est. ~{currentDetails.daysToPay} dias
+              {currentDetails.isEstimatedDueDay ? 'Prazo est. ~' : 'Prazo real: '}
+              {currentDetails.daysToPay} {currentDetails.daysToPay === 1 ? 'dia' : 'dias'}
             </span>
           </div>
           <p className="text-xs text-slate-200 font-medium leading-relaxed">
-            {currentDetails.status}
+            {currentDetails.statusText}
           </p>
         </div>
       )}
@@ -265,6 +251,7 @@ export const BestCardWidget: React.FC<BestCardWidgetProps> = ({ creditCards, onO
                 const isActive = activeCard?.id === card.id;
                 const isHovered = hoveredCardId === card.id;
                 const isTopRecommended = card.id === bestCard?.id;
+                const cardDetails = getCardPaymentDetails(card, queryDateObj);
                 
                 // Profundidade e espaçamento da carteira
                 const translateY = idx * cardStepY;
@@ -337,8 +324,8 @@ export const BestCardWidget: React.FC<BestCardWidgetProps> = ({ creditCards, onO
 
                       <div className="flex flex-col items-end gap-1 shrink-0">
                         <div className="text-right bg-black/50 backdrop-blur-md px-2.5 py-1 rounded-xl border border-white/20">
-                          <span className="text-[8px] opacity-80 uppercase tracking-widest font-bold block">Fechamento</span>
-                          <span className="text-xs sm:text-sm font-black">Dia {card.bestDay}</span>
+                          <span className="text-[8px] opacity-80 uppercase tracking-widest font-bold block">Fech. • Venc.</span>
+                          <span className="text-xs sm:text-sm font-black">Dia {card.bestDay} • {cardDetails.dueDay}</span>
                         </div>
 
                         {isTopRecommended && (
@@ -352,8 +339,12 @@ export const BestCardWidget: React.FC<BestCardWidgetProps> = ({ creditCards, onO
                     {/* Linha Inferior do Cartão */}
                     <div className="flex justify-between items-end pt-2 border-t border-white/10">
                       <div className="text-left">
-                        <span className="text-[9px] uppercase tracking-widest opacity-80 font-semibold block">Cartão de Crédito</span>
-                        <span className="text-xs font-bold opacity-95">•••• •••• {card.bestDay < 10 ? `0${card.bestDay}` : card.bestDay}</span>
+                        <span className="text-[9px] uppercase tracking-widest opacity-80 font-semibold block">
+                          Vencimento: {formatShortDate(cardDetails.dueDate)}
+                        </span>
+                        <span className="text-xs font-bold opacity-95">
+                          {cardDetails.daysToPay} {cardDetails.daysToPay === 1 ? 'dia real de prazo' : 'dias reais de prazo'}
+                        </span>
                       </div>
 
                       <div className="flex items-center gap-1 opacity-70">

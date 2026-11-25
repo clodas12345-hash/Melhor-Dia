@@ -2,6 +2,12 @@ import React, { useState } from 'react';
 import { Plus, Trash2, Edit2, X, AlertCircle, Info, ShieldCheck, MessageCircle, Search } from 'lucide-react';
 import { CreditCard } from '../types';
 import { BankLogo } from './BankLogo';
+import {
+  defaultDueDayFromClosing,
+  formatShortDate,
+  getCardPaymentDetails,
+  getEffectiveDueDay,
+} from '../lib/cardCalculations';
 
 interface CardManagerProps {
   creditCards: CreditCard[];
@@ -12,30 +18,30 @@ interface CardManagerProps {
 }
 
 const BANK_PRESETS = [
-  { name: 'Nubank', defaultBestDay: 5 },
-  { name: 'Itaú', defaultBestDay: 1 },
-  { name: 'Bradesco', defaultBestDay: 10 },
-  { name: 'Santander', defaultBestDay: 8 },
-  { name: 'Caixa', defaultBestDay: 12 },
-  { name: 'Banco do Brasil', defaultBestDay: 15 },
-  { name: 'Inter', defaultBestDay: 6 },
-  { name: 'C6 Bank', defaultBestDay: 2 },
-  { name: 'Banco24Horas', defaultBestDay: 10 },
-  { name: 'Banco Alfa', defaultBestDay: 14 },
-  { name: 'BRB', defaultBestDay: 7 },
-  { name: 'Banco Central', defaultBestDay: 20 },
-  { name: 'BDMG', defaultBestDay: 15 },
-  { name: 'Banco Real', defaultBestDay: 5 },
-  { name: 'Banco Rural', defaultBestDay: 10 },
-  { name: 'Banco BMG', defaultBestDay: 18 },
-  { name: 'BNDES', defaultBestDay: 12 },
-  { name: 'Citibank', defaultBestDay: 25 },
-  { name: 'HSBC', defaultBestDay: 10 },
-  { name: 'Mercantil do Brasil', defaultBestDay: 9 },
-  { name: 'Unibanco', defaultBestDay: 11 },
-  { name: 'XP Investimentos', defaultBestDay: 20 },
-  { name: 'PicPay', defaultBestDay: 11 },
-  { name: 'Neon', defaultBestDay: 4 }
+  { name: 'Nubank', defaultBestDay: 5, defaultDueDay: 12 },
+  { name: 'Itaú', defaultBestDay: 1, defaultDueDay: 10 },
+  { name: 'Bradesco', defaultBestDay: 10, defaultDueDay: 20 },
+  { name: 'Santander', defaultBestDay: 8, defaultDueDay: 18 },
+  { name: 'Caixa', defaultBestDay: 12, defaultDueDay: 22 },
+  { name: 'Banco do Brasil', defaultBestDay: 15, defaultDueDay: 25 },
+  { name: 'Inter', defaultBestDay: 6, defaultDueDay: 15 },
+  { name: 'C6 Bank', defaultBestDay: 2, defaultDueDay: 10 },
+  { name: 'Banco24Horas', defaultBestDay: 10, defaultDueDay: 20 },
+  { name: 'Banco Alfa', defaultBestDay: 14, defaultDueDay: 24 },
+  { name: 'BRB', defaultBestDay: 7, defaultDueDay: 17 },
+  { name: 'Banco Central', defaultBestDay: 20, defaultDueDay: 30 },
+  { name: 'BDMG', defaultBestDay: 15, defaultDueDay: 25 },
+  { name: 'Banco Real', defaultBestDay: 5, defaultDueDay: 15 },
+  { name: 'Banco Rural', defaultBestDay: 10, defaultDueDay: 20 },
+  { name: 'Banco BMG', defaultBestDay: 18, defaultDueDay: 28 },
+  { name: 'BNDES', defaultBestDay: 12, defaultDueDay: 22 },
+  { name: 'Citibank', defaultBestDay: 25, defaultDueDay: 5 },
+  { name: 'HSBC', defaultBestDay: 10, defaultDueDay: 20 },
+  { name: 'Mercantil do Brasil', defaultBestDay: 9, defaultDueDay: 19 },
+  { name: 'Unibanco', defaultBestDay: 11, defaultDueDay: 21 },
+  { name: 'XP Investimentos', defaultBestDay: 20, defaultDueDay: 1 },
+  { name: 'PicPay', defaultBestDay: 11, defaultDueDay: 20 },
+  { name: 'Neon', defaultBestDay: 4, defaultDueDay: 14 }
 ];
 
 export const CardManager: React.FC<CardManagerProps> = ({
@@ -50,6 +56,7 @@ export const CardManager: React.FC<CardManagerProps> = ({
   const [name, setName] = useState('');
   const [segment, setSegment] = useState('');
   const [bestDay, setBestDay] = useState<number | ''>(5);
+  const [dueDay, setDueDay] = useState<number | ''>(15);
   const [customLogo, setCustomLogo] = useState('');
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -90,6 +97,7 @@ export const CardManager: React.FC<CardManagerProps> = ({
     setName('');
     setSegment('');
     setBestDay(5);
+    setDueDay(15);
     setCustomLogo('');
     setIsEditing('new');
     setError('');
@@ -99,6 +107,7 @@ export const CardManager: React.FC<CardManagerProps> = ({
     setName(card.name);
     setSegment(card.segment || '');
     setBestDay(card.bestDay);
+    setDueDay(getEffectiveDueDay(card).dueDay);
     setCustomLogo(card.customLogo || '');
     setIsEditing(card.id);
     setError('');
@@ -107,6 +116,7 @@ export const CardManager: React.FC<CardManagerProps> = ({
   const selectPreset = (preset: typeof BANK_PRESETS[0]) => {
     setName(preset.name);
     setBestDay(preset.defaultBestDay);
+    setDueDay(preset.defaultDueDay ?? defaultDueDayFromClosing(preset.defaultBestDay));
     setSegment('');
   };
 
@@ -119,13 +129,20 @@ export const CardManager: React.FC<CardManagerProps> = ({
     
     const parsedBestDay = typeof bestDay === 'number' ? bestDay : parseInt(bestDay, 10);
     if (isNaN(parsedBestDay) || parsedBestDay < 1 || parsedBestDay > 31) {
-      setError('O melhor dia de compra deve ser entre 1 e 31.');
+      setError('O dia de fechamento (melhor dia) deve ser entre 1 e 31.');
+      return;
+    }
+
+    const parsedDueDay = typeof dueDay === 'number' ? dueDay : parseInt(dueDay, 10);
+    if (isNaN(parsedDueDay) || parsedDueDay < 1 || parsedDueDay > 31) {
+      setError('O dia de vencimento da fatura deve ser entre 1 e 31.');
       return;
     }
 
     const cardData: Omit<CreditCard, 'id'> = { 
       name: name.trim(), 
-      bestDay: parsedBestDay, 
+      bestDay: parsedBestDay,
+      dueDay: parsedDueDay,
     };
     if (segment && segment.trim()) {
       cardData.segment = segment.trim();
@@ -142,6 +159,16 @@ export const CardManager: React.FC<CardManagerProps> = ({
     
     setIsEditing(null);
   };
+
+  const formPreviewDetails =
+    typeof bestDay === 'number' &&
+    bestDay >= 1 &&
+    bestDay <= 31 &&
+    typeof dueDay === 'number' &&
+    dueDay >= 1 &&
+    dueDay <= 31
+      ? getCardPaymentDetails({ bestDay, dueDay }, new Date())
+      : null;
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fadeIn" id="card-manager-modal">
@@ -167,10 +194,10 @@ export const CardManager: React.FC<CardManagerProps> = ({
           <div className="bg-purple-950/20 border border-purple-500/20 rounded-2xl p-4 text-xs text-purple-200 flex gap-3">
             <Info className="w-5 h-5 text-purple-400 shrink-0 mt-0.5" />
             <div className="space-y-1">
-              <p className="font-bold text-purple-300">O que é o "Melhor Dia"?</p>
+              <p className="font-bold text-purple-300">Datas reais de fechamento e vencimento</p>
               <p className="leading-relaxed opacity-90">
-                O melhor dia de compra (fechamento da fatura) ocorre cerca de 10 dias antes do vencimento do cartão. 
-                Ao fazer uma compra neste dia ou logo após, a cobrança cai apenas no mês seguinte, gerando até 40 dias de prazo para pagar!
+                Informe o dia real de fechamento da fatura (melhor dia de compra) e o dia real de vencimento. 
+                Com as duas datas, o aplicativo calcula exatamente quantos dias reais você terá até o pagamento em cada mês!
               </p>
             </div>
           </div>
@@ -262,31 +289,71 @@ export const CardManager: React.FC<CardManagerProps> = ({
                   </div>
                 )}
 
-                {/* Best Buy Day */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1">
-                    Melhor Dia de Compra
-                    <span className="text-[10px] text-purple-400 font-normal">(Fechamento da Fatura)</span>
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="31"
-                    value={bestDay}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === '') {
-                        setBestDay('');
-                      } else {
-                        const num = parseInt(val, 10);
-                        if (!isNaN(num)) {
-                          setBestDay(num);
+                {/* Real Closing & Due Days */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-300 flex items-center gap-1 flex-wrap">
+                      Dia Real de Fechamento
+                      <span className="text-[10px] text-purple-400 font-normal">(Melhor Dia)</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={bestDay}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '') {
+                          setBestDay('');
+                        } else {
+                          const num = parseInt(val, 10);
+                          if (!isNaN(num)) {
+                            setBestDay(num);
+                          }
                         }
-                      }
-                    }}
-                    className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-purple-500 transition"
-                  />
+                      }}
+                      placeholder="Ex: 5"
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-purple-500 transition"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-300 flex items-center gap-1 flex-wrap">
+                      Dia Real de Vencimento
+                      <span className="text-[10px] text-emerald-400 font-normal">(Fatura)</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={dueDay}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '') {
+                          setDueDay('');
+                        } else {
+                          const num = parseInt(val, 10);
+                          if (!isNaN(num)) {
+                            setDueDay(num);
+                          }
+                        }
+                      }}
+                      placeholder="Ex: 15"
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-emerald-500 transition"
+                    />
+                  </div>
                 </div>
+
+                {formPreviewDetails && (
+                  <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-3 py-2 text-[11px] text-emerald-200 flex items-center justify-between gap-2 flex-wrap">
+                    <span>
+                      Comprando hoje: vencimento em <strong className="text-white">{formatShortDate(formPreviewDetails.dueDate)}</strong>
+                    </span>
+                    <span className="font-bold text-emerald-300 bg-emerald-500/20 px-2 py-0.5 rounded-md border border-emerald-500/30">
+                      {formPreviewDetails.daysToPay} {formPreviewDetails.daysToPay === 1 ? 'dia real' : 'dias reais'}
+                    </span>
+                  </div>
+                )}
 
                 {/* Optional Custom Logo */}
                 <div className="space-y-1.5">
@@ -383,23 +450,37 @@ export const CardManager: React.FC<CardManagerProps> = ({
               ) : (
                 <div className="grid grid-cols-1 gap-2.5">
                   {filteredCards.map((card) => {
+                    const effectiveDue = getEffectiveDueDay(card);
+                    const todayDetails = getCardPaymentDetails(card, new Date());
                     return (
                       <div
                         key={card.id}
                         className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-between gap-4 hover:border-purple-500/40 transition"
                       >
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
                           <BankLogo name={card.name} segment={card.segment} customLogo={card.customLogo} className="w-10 h-10 rounded-xl shrink-0" />
-                          <div className="space-y-0.5">
-                            <div className="flex items-center gap-2">
-                              <h4 className="text-sm font-bold text-white">{card.name}</h4>
+                          <div className="space-y-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="text-sm font-bold text-white truncate">{card.name}</h4>
                               {card.segment && (
                                 <span className="text-[10px] bg-purple-500/10 text-purple-300 border border-purple-500/20 px-1.5 py-0.5 rounded-full font-bold">
                                   {card.segment}
                                 </span>
                               )}
                             </div>
-                            <p className="text-xs text-purple-400">Melhor dia: <strong className="font-bold">Dia {card.bestDay}</strong></p>
+                            <div className="flex items-center gap-2 flex-wrap text-xs">
+                              <span className="text-purple-300">
+                                Fecha dia <strong className="font-bold text-white">{card.bestDay}</strong>
+                              </span>
+                              <span className="text-slate-600">•</span>
+                              <span className="text-emerald-300">
+                                Vence dia <strong className="font-bold text-white">{effectiveDue.dueDay}</strong>
+                                {effectiveDue.isEstimated ? ' (est.)' : ''}
+                              </span>
+                              <span className="text-[10px] bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 px-1.5 py-0.5 rounded-md font-semibold">
+                                {todayDetails.daysToPay} {todayDetails.daysToPay === 1 ? 'dia' : 'dias'} hoje
+                              </span>
+                            </div>
                           </div>
                         </div>
 
