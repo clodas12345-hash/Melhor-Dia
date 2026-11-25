@@ -73,10 +73,24 @@ jobs:
         run: npx cap sync android
 
       - name: Corrigir conflitos e configurar build.gradle
+        env:
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: node scripts/patch-gradle.mjs
+
+      - name: Garantir keystore fixa para assinatura
+        run: |
+          mkdir -p ~/.android
+          if [ -n "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | tr -d '[:space:]' | base64 -d > ~/.android/debug.keystore
+          elif [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkeypair -v -keystore ~/.android/debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Android Debug, O=Android, C=US"
+          fi
+          ls -la ~/.android/debug.keystore
 
       - name: Compilar o APK
         working-directory: android
+        env:
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon

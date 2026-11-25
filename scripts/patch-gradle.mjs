@@ -9,13 +9,21 @@ if (!fs.existsSync(gradlePath)) {
 
 let content = fs.readFileSync(gradlePath, 'utf8');
 
-// 1. Auto-increment versionCode and versionName based on GitHub run number or timestamp
-const runNumber = process.env.GITHUB_RUN_NUMBER || String(Math.floor(Date.now() / 1000));
-content = content.replace(/versionCode\s+\d+/, `versionCode ${runNumber}`);
-content = content.replace(/versionName\s+"[^"]+"/, `versionName "1.0.${runNumber}"`);
+// 1. Keep applicationId fixed
+content = content.replace(/applicationId\s+"[^"]+"/, 'applicationId "com.gkdmobility.melhordia"');
 
-// 2. Add Kotlin conflict exclusion if not present
-if (!content.includes('exclude group: \'org.jetbrains.kotlin\'')) {
+// 2. Configure dynamic versionCode and versionName using GITHUB_RUN_NUMBER in Gradle (with local fallback)
+content = content.replace(
+  /versionCode\s+\d+/,
+  `versionCode((System.getenv("GITHUB_RUN_NUMBER")?.trim()?.isInteger() ? System.getenv("GITHUB_RUN_NUMBER").trim().toInteger() : null) ?: ((int)(System.currentTimeMillis() / 1000L)))`
+);
+content = content.replace(
+  /versionName\s+"[^"]+"/,
+  `versionName "1.0.\${(System.getenv('GITHUB_RUN_NUMBER')?.trim()?.isInteger() ? System.getenv('GITHUB_RUN_NUMBER').trim() : 'local')}"`
+);
+
+// 3. Add Kotlin conflict exclusion if not present
+if (!content.includes("exclude group: 'org.jetbrains.kotlin'")) {
   content += `
 configurations.all {
     exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
@@ -24,14 +32,24 @@ configurations.all {
 `;
 }
 
-// 3. Force debug signingConfig if not present
-if (!content.includes('android.signingConfigs.debug.storeFile')) {
+// 4. Configure fixed signingConfigs.debug (~/.android/debug.keystore) and apply to buildTypes.debug
+if (!content.includes('signingConfigs.debug') && !content.includes('android.signingConfigs.debug.storeFile')) {
   content += `
-android.signingConfigs.debug.storeFile = new File(System.getProperty("user.home") + "/.android/debug.keystore")
-android.signingConfigs.debug.storePassword = "android"
-android.signingConfigs.debug.keyAlias = "androiddebugkey"
-android.signingConfigs.debug.keyPassword = "android"
-android.buildTypes.debug.signingConfig = android.signingConfigs.debug
+android {
+    signingConfigs {
+        debug {
+            storeFile file(System.getProperty("user.home") + "/.android/debug.keystore")
+            storePassword "android"
+            keyAlias "androiddebugkey"
+            keyPassword "android"
+        }
+    }
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+    }
+}
 `;
 }
 
