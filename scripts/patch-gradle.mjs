@@ -72,9 +72,26 @@ const stylesV35Content = `<?xml version="1.0" encoding="utf-8"?>
 fs.writeFileSync(stylesV35Path, stylesV35Content, 'utf8');
 console.log('Successfully created values-v35/styles.xml');
 
-// 6. Ensure AndroidManifest.xml uses the app notification icon for FCM Push Notifications as well
+// 6. Ensure notification drawable icons exist and configure AndroidManifest.xml for FCM Push Notifications
+const resDir = path.resolve('android/app/src/main/res');
+const notifFallbackDir = path.resolve('assets/notif-icons');
+if (fs.existsSync(resDir) && fs.existsSync(notifFallbackDir)) {
+  for (const folder of fs.readdirSync(notifFallbackDir)) {
+    const srcFile = path.join(notifFallbackDir, folder, 'ic_stat_icon_config_sample.png');
+    if (fs.existsSync(srcFile)) {
+      const destDir = path.join(resDir, folder);
+      fs.mkdirSync(destDir, { recursive: true });
+      const destFile = path.join(destDir, 'ic_stat_icon_config_sample.png');
+      if (!fs.existsSync(destFile)) {
+        fs.copyFileSync(srcFile, destFile);
+      }
+    }
+  }
+}
+
 const manifestPath = path.resolve('android/app/src/main/AndroidManifest.xml');
-if (fs.existsSync(manifestPath)) {
+const drawableIconPath = path.resolve('android/app/src/main/res/drawable/ic_stat_icon_config_sample.png');
+if (fs.existsSync(manifestPath) && fs.existsSync(drawableIconPath)) {
   let manifestContent = fs.readFileSync(manifestPath, 'utf8');
   if (!manifestContent.includes('com.google.firebase.messaging.default_notification_icon')) {
     manifestContent = manifestContent.replace(

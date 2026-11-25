@@ -87,9 +87,11 @@ async function generateIcons() {
       out[i + 3] = newAlpha;
     }
 
-    const baseSilhouette = sharp(out, {
+    const basePngBuf = await sharp(out, {
       raw: { width: info.width, height: info.height, channels: 4 }
-    });
+    })
+      .png()
+      .toBuffer();
 
     for (const { name, size } of notifSizes) {
       const targetDir = path.join(ANDROID_RES_DIR, name);
@@ -98,12 +100,12 @@ async function generateIcons() {
       }
       const pad = Math.max(2, Math.round(size * 0.08));
       const inner = size - pad * 2;
-      const resizedBuf = await baseSilhouette
-        .clone()
+      const resizedBuf = await sharp(basePngBuf)
         .resize(inner, inner, {
           fit: 'contain',
           background: { r: 0, g: 0, b: 0, alpha: 0 }
         })
+        .png()
         .toBuffer();
 
       await sharp({
