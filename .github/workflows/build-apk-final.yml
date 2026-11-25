@@ -21,9 +21,10 @@ jobs:
         run: |
           mkdir -p ~/.android
           if [ -n "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" ]; then
+            echo "✅ Usando keystore fixa do segredo DEBUG_KEYSTORE_BASE64"
             echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | tr -d '[:space:]' | base64 -d > ~/.android/debug.keystore
           else
-            # Fallback se o segredo não existir (gera uma temporária para não quebrar o build)
+            echo "⚠️ AVISO: Segredo DEBUG_KEYSTORE_BASE64 não encontrado! Gerando keystore temporária (updates por cima exigirão DEBUG_KEYSTORE_BASE64)."
             keytool -genkeypair -v -keystore ~/.android/debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Android Debug, O=Android, C=US"
           fi
           echo "Tamanho do arquivo de keystore:"
