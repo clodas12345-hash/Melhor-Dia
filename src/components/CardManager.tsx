@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Edit2, X, AlertCircle, Info, ShieldCheck, MessageCircle, Search } from 'lucide-react';
+import { Plus, Trash2, Edit2, X, AlertCircle, Info, ShieldCheck, MessageCircle, Search, HelpCircle } from 'lucide-react';
 import { CreditCard } from '../types';
 import { BankLogo } from './BankLogo';
 import {
@@ -60,6 +60,7 @@ export const CardManager: React.FC<CardManagerProps> = ({
   const [customLogo, setCustomLogo] = useState('');
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeTooltip, setActiveTooltip] = useState<'bestDay' | 'dueDay' | null>(null);
 
   const filteredCards = creditCards.filter((card) => {
     if (!searchQuery.trim()) return true;
@@ -291,12 +292,43 @@ export const CardManager: React.FC<CardManagerProps> = ({
 
                 {/* Real Closing & Due Days */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-300 flex items-center gap-1 flex-wrap">
-                      Dia Real de Fechamento
-                      <span className="text-[10px] text-purple-400 font-normal">(Melhor Dia)</span>
-                    </label>
+                  <div className="space-y-1.5 relative">
+                    <div className="flex items-center justify-between gap-1">
+                      <label htmlFor="card-best-day-input" className="text-xs font-semibold text-slate-300 flex items-center gap-1 flex-wrap">
+                        Dia Real de Fechamento
+                        <span className="text-[10px] text-purple-400 font-normal">(Melhor Dia)</span>
+                      </label>
+                      <div
+                        className="relative shrink-0"
+                        onMouseEnter={() => setActiveTooltip('bestDay')}
+                        onMouseLeave={() => setActiveTooltip((prev) => (prev === 'bestDay' ? null : prev))}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setActiveTooltip((prev) => (prev === 'bestDay' ? null : 'bestDay'))}
+                          onFocus={() => setActiveTooltip('bestDay')}
+                          onBlur={() => setActiveTooltip((prev) => (prev === 'bestDay' ? null : prev))}
+                          aria-label="Ajuda sobre Melhor Dia de Fechamento"
+                          aria-expanded={activeTooltip === 'bestDay'}
+                          className="p-1 text-purple-300/80 hover:text-purple-200 rounded-full hover:bg-purple-500/15 transition cursor-pointer flex items-center justify-center"
+                        >
+                          <HelpCircle className="w-3.5 h-3.5" />
+                        </button>
+                        {activeTooltip === 'bestDay' && (
+                          <div
+                            role="tooltip"
+                            className="absolute z-30 right-0 bottom-full mb-2 w-60 bg-[#18181b] border border-purple-500/40 rounded-xl p-2.5 text-[11px] text-slate-200 leading-relaxed shadow-2xl animate-fadeIn pointer-events-none"
+                          >
+                            <p className="font-bold text-purple-300 mb-0.5">Fechamento = Melhor Dia</p>
+                            <p>
+                              Compras a partir deste dia só caem na fatura seguinte, dando o prazo máximo até o vencimento escolhido ao lado.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                     <input
+                      id="card-best-day-input"
                       type="number"
                       min="1"
                       max="31"
@@ -317,12 +349,43 @@ export const CardManager: React.FC<CardManagerProps> = ({
                     />
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-300 flex items-center gap-1 flex-wrap">
-                      Dia Real de Vencimento
-                      <span className="text-[10px] text-emerald-400 font-normal">(Fatura)</span>
-                    </label>
+                  <div className="space-y-1.5 relative">
+                    <div className="flex items-center justify-between gap-1">
+                      <label htmlFor="card-due-day-input" className="text-xs font-semibold text-slate-300 flex items-center gap-1 flex-wrap">
+                        Dia Real de Vencimento
+                        <span className="text-[10px] text-emerald-400 font-normal">(Fatura)</span>
+                      </label>
+                      <div
+                        className="relative shrink-0"
+                        onMouseEnter={() => setActiveTooltip('dueDay')}
+                        onMouseLeave={() => setActiveTooltip((prev) => (prev === 'dueDay' ? null : prev))}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setActiveTooltip((prev) => (prev === 'dueDay' ? null : 'dueDay'))}
+                          onFocus={() => setActiveTooltip('dueDay')}
+                          onBlur={() => setActiveTooltip((prev) => (prev === 'dueDay' ? null : prev))}
+                          aria-label="Ajuda sobre Dia de Vencimento"
+                          aria-expanded={activeTooltip === 'dueDay'}
+                          className="p-1 text-emerald-300/80 hover:text-emerald-200 rounded-full hover:bg-emerald-500/15 transition cursor-pointer flex items-center justify-center"
+                        >
+                          <HelpCircle className="w-3.5 h-3.5" />
+                        </button>
+                        {activeTooltip === 'dueDay' && (
+                          <div
+                            role="tooltip"
+                            className="absolute z-30 right-0 bottom-full mb-2 w-60 bg-[#18181b] border border-emerald-500/40 rounded-xl p-2.5 text-[11px] text-slate-200 leading-relaxed shadow-2xl animate-fadeIn pointer-events-none"
+                          >
+                            <p className="font-bold text-emerald-300 mb-0.5">Vencimento da Fatura</p>
+                            <p>
+                              Dia do pagamento, em geral ~10 dias após o fechamento. Junto com o Melhor Dia, define os dias reais sem juros até pagar.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                     <input
+                      id="card-due-day-input"
                       type="number"
                       min="1"
                       max="31"
