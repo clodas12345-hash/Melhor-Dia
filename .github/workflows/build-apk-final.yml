@@ -86,6 +86,7 @@ jobs:
           elif [ ! -f ~/.android/debug.keystore ]; then
             keytool -genkeypair -v -keystore ~/.android/debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Android Debug, O=Android, C=US"
           fi
+          keytool -list -keystore ~/.android/debug.keystore -storepass android | grep -E "Alias|SHA256" || true
           ls -la ~/.android/debug.keystore
 
       - name: Compilar o APK
@@ -96,15 +97,23 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      - name: Verificar Fingerprint da Assinatura
-        continue-on-error: true
+      - name: Verificar Assinatura e Metadados do APK
         run: |
           SDK=${ANDROID_HOME:-/usr/local/lib/android/sdk}
           APK=$(find android/app/build/outputs/apk/debug -name "*.apk" | head -n 1)
+          if [ -z "$APK" ] || [ ! -f "$APK" ]; then
+            echo "Erro: APK não encontrado!"
+            exit 1
+          fi
           APKSIGNER=$(ls $SDK/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
-          if [ -n "$APKSIGNER" ] && [ -f "$APK" ]; then
-            echo "=== Fingerprint da assinatura (SHA-256) ==="
-            "$APKSIGNER" verify --print-certs "$APK" | grep -i "SHA-256"
+          if [ -n "$APKSIGNER" ]; then
+            echo "=== Verificação da assinatura (apksigner) ==="
+            "$APKSIGNER" verify --verbose --print-certs "$APK" | grep -E "Verifies|Verified using|SHA-256"
+          fi
+          AAPT2=$(ls $SDK/build-tools/*/aapt2 2>/dev/null | sort -V | tail -1)
+          if [ -n "$AAPT2" ]; then
+            echo "=== Package / versionCode ==="
+            "$AAPT2" dump badging "$APK" | grep -E "^package:|^sdkVersion:|^targetSdkVersion:"
           fi
 
       - name: Upload APK Artifact
